@@ -1,0 +1,195 @@
+<html>
+<head>
+
+<base href="./">
+
+<script>if (typeof module === 'object') {window.module = module; module = undefined;}</script>
+
+<script src="./javascripts/jquery-3.4.1.min.js"></script>
+
+<script src="./javascripts/base36.js"></script>
+
+<script src="./javascripts/popper.min.js"></script>
+
+<script src="./javascripts/bootstrap-4.4.1/js/bootstrap.min.js"></script>
+
+<link rel="stylesheet" href="./javascripts/bootstrap-4.4.1/css/bootstrap.min.css" />
+
+<script src="./javascripts/pouchdb-7.1.1.min.js"></script>
+
+<script src="./javascripts/pouchdb.find.min.js"></script>
+
+<script src="./javascripts/cytoscape.min.js"></script>
+
+<script src="./javascripts/layout-base.js"></script>
+<script src="./javascripts/avsdf-base.js"></script>
+<script src="https://unpkg.com/cose-base/cose-base.js"></script>
+<!--<script src="./javascripts/cose-base.js"></script>-->
+<script src="./javascripts/cytoscape-layvo.js"></script>
+<script src="./javascripts/cytoscape-cose-bilkent.js"></script>
+
+<script src="./javascripts/cise/cytoscape-cise.js"></script>
+
+<script>if (window.module) module = window.module;</script>
+
+<script type='text/javascript'>
+
+	class Graph{
+		#rand = function(min, max){ return Math.floor(Math.random() * (max - min + 1)) + min }
+		constructor(){
+			this.init = cytoscape({ container: document.getElementById('container') })
+
+		}
+
+		add(id){
+	    	this.init.add([
+			 		{ group: 'nodes', data: { id: id }, position: { x: this.#rand(0, 1000), y: this.#rand(0, 1000) } }
+				])
+			}
+
+		link(edgeId, sourceNodeId, targetNodeId){
+			try{
+		    	this.init.add([
+				 		{ group: 'edges', data: { id: edgeId, source: sourceNodeId, target: targetNodeId } }
+					])
+				}
+			catch(e){ console.log(e) }
+			
+			}
+
+		check(id){
+			return this.init.getElementById(id)
+		}
+
+		data(id){
+			return this.init.data(id)
+		}
+
+		layout(name, animate){
+			return this.init.layout({name:name, animate:animate})
+		}
+	}
+
+	class Database{
+		constructor(group, method){
+			this.group = group
+			this.method = method
+		}
+
+		connect(){
+			return this.remoteDB = new PouchDB(this.group.concat('_', this.method))
+		}
+
+		create(){
+			return this.localDB = new PouchDB(this.group.concat('_', this.method))
+		}
+
+		sync(){
+			this.remoteDB = this.connect()
+			this.localDB = this.create()
+
+			this.remoteDB.replicate.to(this.localDB).on('complete', function(){
+				console.log('Synced')
+			}).on('error', function(err){
+				console.log(err)
+			})
+
+			return this.localDB
+		}
+	}
+
+	let _inUse = []
+
+	class Method{
+		#inUse = function(group, method){ _inUse.some((e) => { if(e.findIndex((element) => (element = group)) !=-1 && e.findIndex((element) => (element = method)) !=-1){ return true } else { return false } }) }
+		#store = function([group, method]){ _inUse.push([group, method]) }
+		constructor(graph, group){
+			this.graph = graph
+			this.group = group
+		}
+
+		ufg(){
+
+			let method = 'ufg'
+			let graph = this.graph
+			let group = this.group
+
+			if(this.#inUse(group, method) == false){
+				console.log(this.#inUse(group, method))
+
+				this.#store([group, method])
+
+				let localDB = new Database(group, method).sync()
+
+				graph.add(this.group)
+
+				localDB.allDocs({'include_docs':true}).then((data) => (
+
+					data['rows'].forEach(function(doc){
+
+						if(graph.check(doc['doc']['_id']).empty()){
+							graph.add(doc['doc']['_id'])
+							graph.link(group.concat('_', doc['doc']['_id']), group, doc['doc']['_id'])
+						}
+
+						doc['doc']['edges'].forEach(function(target){
+							if(graph.check(target).empty()){
+								graph.add(target)
+								graph.link(doc['doc']['_id'].concat('_', target), doc['doc']['_id'], target)
+								graph.link(group.concat('_', target), group, target)
+							}
+						})		
+					})
+				))
+			}
+		}
+	}
+
+let graphs = []
+
+	function Init(){
+
+		function cise(graph){
+			graph.layout('cise').run()
+		}
+
+		function cose(graph){
+			graph.layout('cose-bilkent').run()
+		}
+
+		let graph = new Graph
+		graphs.push(graph)
+
+		let group = 'right_fem'
+
+		let ufg = function(){ new Method(graph, group).ufg() }; 
+
+		$('.dropdown-menu').prepend('<li id="ufg" class="caret">'+ group + '_ufg</li>')
+		$(function() { $('#ufg').click(function(){ ufg(); $('#ufg').addClass('active') }) })
+
+		$('.dropdown-menu').prepend('<li id="cise" class="caret">'+ 'cise' + '</li>')
+		$(function() { $('#cise').click(function(){ cise(graphs[0]); $('#cise').addClass('active') }) })
+
+		$('.dropdown-menu').prepend('<li id="cose" class="caret">'+ 'cose' + '</li>')
+		$(function() { $('#cose').click(function(){ cose(graphs[0]); $('#cose').addClass('active') }) })
+
+
+	}
+
+	$(document).ready(function(){ Init() })
+
+		
+</script>
+
+</head>
+
+<body>
+<nav class="navbar navbar-dark bg-dark">
+	<div class="dropdown">
+	  <button class="btn btn-primary dropdown-toggle" type="button" data-toggle="dropdown">Load
+	  <span class="caret"></span></button>
+	  <ul class="dropdown-menu"></ul>
+	</div>
+</nav>
+<div id=container style='width:100%;height:100%;overflow:hidden;display:block;'></div>
+</body>
